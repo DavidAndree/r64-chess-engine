@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Data, models, local database
+data/
+checkpoints/
+*.sqlite
+*.pgn
+*.pgn.zst
+
+# Compiled binaries from the old C++ prototype
+main
+opengl_app
+*.dSYM/
+*.o
+
+# Editors / OS
+.DS_Store
+.idea/

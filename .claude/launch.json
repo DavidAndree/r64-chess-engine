@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "r64",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "-m", "r64.server", "--reload"],
+      "port": 8064
+    }
+  ]
+}

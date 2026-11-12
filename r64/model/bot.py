@@ -78,7 +78,7 @@ class HumanBot:
         planes = planes_from_arrays(
             pieces[None], np.array([castling], np.uint8), np.array([ep], np.int8)
         )
-        t = lambda v: torch.tensor([v], dtype=torch.float32)  # noqa: E731
+        t = lambda v: torch.tensor([v], dtype=torch.float32)
         feats = features(t(elo), t(elo), t(CLOCK_SECONDS), t(CLOCK_SECONDS))
         mask = torch.from_numpy(legal_move_mask(board))
         with self._lock, torch.inference_mode():

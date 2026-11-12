@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from r64 import config
+from r64.analysis.service import WeaknessService
 from r64.game import GameNotFound, GameOver, GameService, IllegalMove, state
 from r64.model.personal import AutoTrainer, Version, versions
 from r64.opponents import Opponent, StockfishNotFound, StockfishOpponent
@@ -36,7 +37,10 @@ def default_opponents() -> dict[str, Opponent]:
     """Every opponent that's available: the bot if a trained model exists, Stockfish if installed."""
     opponents: dict[str, Opponent] = {}
     if config.BOT_CHECKPOINT.exists():
-        from r64.model.bot import HumanBot, personal_bot  # imports torch: only when there is a model
+        from r64.model.bot import (  # imports torch: only when there is a model
+            HumanBot,
+            personal_bot,
+        )
 
         for v in reversed(versions()):  # newest first
             opponents[v.key] = personal_bot(v)
@@ -73,6 +77,7 @@ def create_app(
     make_store: Callable[[], GameStore] = lambda: GameStore(config.DB_PATH),
     make_opponents: Callable[[], dict[str, Opponent]] = default_opponents,
     make_trainer: Callable[[GameService], AutoTrainer | None] = default_trainer,
+    make_weakness: Callable[[], WeaknessService] = WeaknessService,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -83,6 +88,7 @@ def create_app(
         if trainer is not None:
             service.on_finish.append(trainer.game_finished)
         app.state.service, app.state.trainer = service, trainer
+        app.state.weakness = make_weakness()
         yield
         if trainer is not None:
             trainer.wait()  # don't leave a half-written version behind
@@ -159,9 +165,25 @@ def create_app(
             raise HTTPException(409, "game is not finished")
         return record.pgn
 
+    @app.get("/api/weakness")
+    def weakness(recent: int = 1000):
+        return app.state.weakness.report(max(1, min(recent, 100_000)))
+
+    @app.get("/api/weakness/status")
+    def weakness_status():
+        return app.state.weakness.status()
+
+    @app.post("/api/weakness/update")
+    def weakness_update():
+        return {"started": app.state.weakness.update()}
+
     @app.get("/")
     def index():
         return FileResponse(WEB_DIR / "index.html")
+
+    @app.get("/weakness")
+    def weakness_page():
+        return FileResponse(WEB_DIR / "weakness.html")
 
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
     return app

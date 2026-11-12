@@ -246,3 +246,10 @@ table.data .better { color: var(--win); font-weight: 600; }
   table.data { display: block; overflow-x: auto; }
 }
 table.data td:first-child { white-space: nowrap; }
+
+/* ---------- sparring & drills ---------- */
+.banner { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-bottom: 10px; font-size: 14px; }
+.drills { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.drills li { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.drill-name { font-weight: 600; font-size: 14px; }
+.drills button { padding: 4px 10px; }

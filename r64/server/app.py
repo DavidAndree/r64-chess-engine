@@ -17,6 +17,7 @@ from r64.analysis.service import WeaknessService
 from r64.game import GameNotFound, GameOver, GameService, IllegalMove, state
 from r64.model.personal import AutoTrainer, Version, versions
 from r64.opponents import Opponent, StockfishNotFound, StockfishOpponent
+from r64.sparring_service import SparringService
 from r64.storage import GameStore
 
 WEB_DIR = config.ROOT / "web"
@@ -26,7 +27,12 @@ log = logging.getLogger("r64")
 class NewGame(BaseModel):
     color: Literal["white", "black", "random"] = "white"
     opponent: str = "stockfish"
-    elo: int | None = 1500  # checked against the opponent's range
+    elo: int | None = 1500  # checked against the opponent's range; ignored by the sparring partner
+    focus: str | None = None  # sparring: which weak spot to target ("auto" / None = rotate)
+
+
+class NewDrill(BaseModel):
+    tag: str
 
 
 class Move(BaseModel):
@@ -41,7 +47,10 @@ def default_opponents() -> dict[str, Opponent]:
             HumanBot,
             personal_bot,
         )
+        from r64.sparring import SparringBot
 
+        # Steering targets are set once the sparring service exists (see create_app).
+        opponents["sparring"] = SparringBot(config.BOT_CHECKPOINT, targets_fn=list)
         for v in reversed(versions()):  # newest first
             opponents[v.key] = personal_bot(v)
         opponents["bot"] = HumanBot(config.BOT_CHECKPOINT)
@@ -89,6 +98,11 @@ def create_app(
             service.on_finish.append(trainer.game_finished)
         app.state.service, app.state.trainer = service, trainer
         app.state.weakness = make_weakness()
+        sparring = None
+        if "sparring" in opponents and "bot" in opponents:
+            sparring = SparringService(service, app.state.weakness.cache)
+            opponents["sparring"].targets_fn = sparring.targets
+        app.state.sparring = sparring
         yield
         if trainer is not None:
             trainer.wait()  # don't leave a half-written version behind
@@ -97,6 +111,14 @@ def create_app(
         store.close()
 
     app = FastAPI(title="r64", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def revalidate_ui(request, call_next):
+        # Browsers must re-check the page and its scripts, or they run stale code after an update.
+        response = await call_next(request)
+        if not request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     def service() -> GameService:
         return app.state.service
@@ -125,9 +147,37 @@ def create_app(
     @app.post("/api/games")
     def new_game(req: NewGame):
         try:
+            if req.opponent == "sparring" and app.state.sparring is not None:
+                return state(app.state.sparring.new_sparring_game(req.color, req.focus))
             return state(service().new_game(req.color, req.opponent, req.elo))
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
+
+    def sparring_service() -> SparringService:
+        if app.state.sparring is None:
+            raise HTTPException(409, "sparring needs the trained model")
+        return app.state.sparring
+
+    @app.get("/api/sparring")
+    def sparring_status():
+        if app.state.sparring is None:
+            return {"available": False}
+        return {"available": True, **app.state.sparring.status()}
+
+    @app.post("/api/drills")
+    def new_drill(req: NewDrill):
+        try:
+            record, drill = sparring_service().new_drill(req.tag)
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from e
+        return {**state(record), "drill": drill}
+
+    @app.get("/api/games/{game_id}/focus")
+    def game_focus(game_id: int):
+        sp = sparring_service()
+        record = _found(lambda: service().get(game_id))
+        bot = service().opponents["bot"]
+        return sp.focus(record.id, lambda boards: bot.expected_scores(boards, record.opponent_elo))
 
     @app.get("/api/games")
     def list_games(limit: int = 50):

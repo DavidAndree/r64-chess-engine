@@ -88,15 +88,40 @@ class HumanBot:
         idx = torch.nonzero(mask).flatten().tolist()
         return {index_to_move(i, board): float(probs[i]) for i in idx}
 
-    def sample(self, probs: dict[chess.Move, float], temperature: float) -> chess.Move:
+    def expected_scores(self, boards: list[chess.Board], elo: int | None) -> list[float]:
+        """The value head: expected score (win + draw/2) for the side to move in each position,
+        for players of this rating. A fast stand-in for an engine eval (it agrees with Stockfish's
+        winning/losing call ~85% of the time on my games)."""
+        if not boards:
+            return []
+        model = self._get_model()
+        elo = float(max(BOT_MIN_ELO, min(BOT_MAX_ELO, elo or 1500)))
+        enc = [encode_position(b) for b in boards]
+        planes = planes_from_arrays(
+            np.stack([e[0] for e in enc]), np.array([e[1] for e in enc], np.uint8),
+            np.array([e[2] for e in enc], np.int8),
+        )
+        n = len(boards)
+        t = lambda v: torch.full((n,), v, dtype=torch.float32)
+        feats = features(t(elo), t(elo), t(CLOCK_SECONDS), t(CLOCK_SECONDS))
+        with self._lock, torch.inference_mode():
+            _, value = model(torch.from_numpy(planes), feats)
+        p = torch.softmax(value, 1)
+        return (p[:, 0] + 0.5 * p[:, 1]).tolist()
+
+    def candidates(self, probs: dict[chess.Move, float], temperature: float) -> tuple[list[chess.Move], list[float]]:
+        """The plausible moves (top_p of the probability) and their sampling weights."""
         moves = sorted(probs, key=probs.get, reverse=True)
         p = np.array([probs[m] for m in moves], dtype=np.float64)
         keep = int(np.searchsorted(np.cumsum(p), self.top_p) + 1)  # always at least the top move
         moves, p = moves[:keep], p[:keep]
         if temperature <= 0:
-            return moves[0]
-        p = p ** (1.0 / temperature)
-        return self._rng.choices(moves, weights=p.tolist())[0]
+            return moves[:1], [1.0]
+        return moves, (p ** (1.0 / temperature)).tolist()
+
+    def sample(self, probs: dict[chess.Move, float], temperature: float) -> chess.Move:
+        moves, weights = self.candidates(probs, temperature)
+        return self._rng.choices(moves, weights=weights)[0]
 
     def choose_move(self, board: chess.Board, elo: int | None) -> chess.Move:
         start = time.monotonic()

@@ -9,8 +9,8 @@ dist/
 build/
 
 # Data, models, local database
-data/
-checkpoints/
+/data/
+/checkpoints/
 *.sqlite
 *.pgn
 *.pgn.zst

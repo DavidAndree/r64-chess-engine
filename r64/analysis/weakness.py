@@ -25,7 +25,7 @@ from r64 import config
 from r64.analysis import store
 from r64.analysis.tags import CAUSES, MISTAKE, describe
 
-TAGS_VERSION = 2   # bump when tags.py changes, to invalidate the cached report
+TAGS_VERSION = 3   # bump when tags.py changes, to invalidate the cached report
 CACHE_PATH = config.DATA_DIR / "weakness.json"
 MIN_MOVES = 150    # ignore tags with fewer of my moves than this
 Z_CLEAR = 2.0
@@ -37,6 +37,7 @@ class Move:
     mine: bool
     peer: bool            # counts in the "players at my rating" baseline
     loss: float
+    wp_before: float
     severity: str | None
     cause: str | None
     tags: list[str]
@@ -73,7 +74,7 @@ def load_moves(conn, recent: int) -> tuple[list[dict], list[Move]]:
             mine = white_to_move == my_white
             moves.append(Move(
                 game_id=g["id"], mine=mine, peer=not mine and g["source"] != "r64",
-                loss=facts.loss, severity=facts.severity, cause=facts.cause, tags=facts.tags,
+                loss=facts.loss, wp_before=facts.wp_before, severity=facts.severity, cause=facts.cause, tags=facts.tags,
                 ply=r["ply"], fen=r["fen"], move=r["move"], best=r["best"],
                 played_at=g["played_at"], link=g["key"] if g["key"].startswith("http") else None,
             ))
@@ -116,7 +117,7 @@ def _example(m: Move) -> dict:
     return {
         "fen": m.fen, "move": m.move, "best": m.best,
         "played": f"{num} {_san(m.fen, m.move)}", "better": _san(m.fen, m.best),
-        "loss": m.loss, "severity": m.severity, "cause": m.cause,
+        "loss": m.loss, "wp_before": m.wp_before, "severity": m.severity, "cause": m.cause,
         "date": m.played_at[:10], "link": m.link,
         "orientation": "white" if board.turn == chess.WHITE else "black",
     }
@@ -205,6 +206,12 @@ def build_report(recent: int = 1000, db: Path | None = None) -> dict:
     weak = [r for r in rows if r["z"] >= Z_CLEAR and r["excess"] > 0]
     weak.sort(key=lambda r: r["extra_per_game"], reverse=True)
     report["weak_spots"] = [with_examples(r) for r in weak[:6]]
+    # Drill positions: where I went wrong in each weak spot, most recent first.
+    report["drills"] = {}
+    for r in report["weak_spots"]:
+        ms = sorted((m for m in by_tag_me[r["tag"]] if m.loss >= MISTAKE),
+                    key=lambda m: m.played_at, reverse=True)
+        report["drills"][r["tag"]] = [_example(m) for m in ms[:60]]
     strong = [r for r in rows if r["z"] <= -Z_CLEAR]
     strong.sort(key=lambda r: r["extra_per_game"])
     report["strengths"] = strong[:4]

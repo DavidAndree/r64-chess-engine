@@ -113,7 +113,7 @@ that keeps adapting, finds weaknesses, and targets them.
 - Dashboard: where I lose the most per move, compared with players at my rating.
 - **Done when:** the dashboard shows clear, believable weak spots.
 
-### Phase 7 — Targeted sparring + adaptive difficulty
+### Phase 7 — Targeted sparring + adaptive difficulty ✅
 - Steering: among human-plausible moves, the bot prefers ones leading toward my weak position types.
 - Drills: start games from real positions (from the database) that match my weak spots.
 - Adaptive level: adjust the bot's rating to keep my score around 50%.

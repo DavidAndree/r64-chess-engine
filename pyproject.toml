@@ -3,7 +3,7 @@ name = "r64"
 version = "0.1.0"
 description = "A personal chess sparring partner: plays like a human, learns how you play, trains your weak spots."
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "chess>=1.11",

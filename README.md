@@ -1,188 +1,85 @@
 # r64
 
-A personal chess sparring partner. It doesn't try to beat Stockfish — it tries to be the most
-useful opponent for **you**:
+A chess sparring partner that learns how you play. Instead of trying to beat you like Stockfish, it
+tries to be the most useful opponent for your level:
 
-- **Plays like a human** at a chosen rating, with realistic mistakes.
-- **Learns how you play** — the more games you play, the better it models you.
-- **Finds your weak spots** and steers games toward them.
+- **Human-like bot.** A neural network trained on lichess games plays like a human at any rating
+  from 600 to 2200, mistakes included.
+- **Personal model.** Fine-tuned on your own games, it plays like you, and it retrains as you play.
+- **Weakness map.** Stockfish analyzes your games and shows where you lose more than players at your
+  rating do, with real examples from your games.
+- **Targeted sparring.** The sparring partner steers games into your weak spots and adapts its level
+  to keep you around 50%. Drills start from positions where you went wrong.
 
-See [PLAN.md](PLAN.md) for the full design and roadmap.
-
-## Status
-
-All 7 phases done. r64 is a sparring partner that knows how I play:
-
-- a **human-like bot** at any rating (600-2200) and a **personal model** that plays like me
-  (predicts 46.2% of my moves; the general model 42.0%), retrained as I play;
-- a **weakness map** (`/weakness`): Stockfish analyzes all my games and shows where I lose more
-  than players at my rating, with real examples;
-- **targeted sparring**: a partner that steers games into my weak spots, adapts its level to keep
-  me around 50%, and **drills** that start from positions where I went wrong.
-
-## Data
-
-```bash
-# Stream games from the lichess open database (only the needed part is downloaded)
-uv run python -m r64.data lichess-db --month 2026-10 --games 200000
-
-# Download my games and encode my moves (for the personal model)
-uv run python -m r64.data import-mine --lichess <name> --chesscom <name>
-uv run python -m r64.data encode-mine
-```
-
-## My personal model
-
-```bash
-uv run python -m r64.model personal          # train the next version (~3 min on an M2)
-uv run python -m r64.model personal --fetch  # re-download my chess.com/lichess games first
-uv run python -m r64.model learning-curve    # accuracy vs number of my games
-```
-
-Each version is the base model fine-tuned (4 epochs, lr 1e-4) on **all** my games so far: my
-imported games plus every finished r64 game. Versions are kept in `checkpoints/me/vNNN/`, so I
-can play against older versions of myself. The web server also retrains automatically after every
-20 new r64 games, or when you click "Retrain now". It plays at my current rating (median of my last
-50 rated games, or `"rating"` in `data/profile.json`) and samples my move distribution as is.
-
-How well it predicts my moves (held-out games, same positions for all):
-
-| My games used | 0 (base) | 100 | 250 | 500 | 1,000 | 2,000 | 3,067 |
-|---|---|---|---|---|---|---|---|
-| Move-match | 42.0% | 43.6% | 45.3% | 45.2% | 45.4% | 45.7% | 46.2% |
-
-Most of the gain comes from the first few hundred games (my level and openings, e.g. it learned
-that I answer 1.e4 with 1...c6: 5% → 41%); after that it keeps improving slowly.
-
-## Weakness map
-
-```bash
-uv run python -m r64.analysis analyze     # Stockfish over every game not analyzed yet (resumable)
-uv run python -m r64.analysis report      # the weakness map as text (also at /weakness)
-```
-
-Stockfish evaluates every position of my games (10,000 nodes ≈ depth 13; ~1 s per game per core,
-all cores in parallel; 3,448 games ≈ 1 hour). Results go to `data/analysis.sqlite`; the "Analyze
-new games" button on the page adds new chess.com/r64 games.
-
-How it measures:
-- **Cost of a move** = the winning chances it gives away (Stockfish eval before vs after, through
-  lichess's eval → win-probability curve). Blunder ≥ 15 points, mistake ≥ 10, inaccuracy ≥ 5.
-- **Players at my rating** = my opponents in the same games: same rating (chess.com matchmaking),
-  same time controls. Games against r64's bots don't count as opponents.
-- Every move is tagged (phase, winning/balanced/losing, material, clock, check, attacked piece,
-  king in the center, piece moved, endgame type), and every mistake gets a cause (hung material,
-  missed material, walked into / missed a fork, walked into / missed mate, other).
-- A **weak spot** is a tag where I lose clearly more than my opponents (≥ 2 standard errors),
-  ranked by the extra winning chances it costs per game.
-
-## Sparring and drills
-
-Pick **Sparring partner** as the opponent on the play page:
-
-- **Steering.** Among the moves a human at its rating would plausibly play, it prefers the ones
-  that leave me in one of my weak spots. Each game has one focus (rotating, weighted by what each
-  weak spot costs me, or picked by hand). It recognises positions without Stockfish: material,
-  phase, attacked pieces and tactics from the board; winning/losing from the network's value head
-  (calibrated on my games: 86% agreement with Stockfish).
-- **Adaptive level.** Its rating starts at my current rating and moves Elo-style (K = 40) after
-  every sparring game, toward the level where I score 50%.
-- **Focus summary.** After a sparring game: how much of it was spent in the focus position,
-  compared with my chess.com games.
-
-**Drills** start a game from a real position from my games where I went wrong in a weak spot
-(60 recent ones per weak spot), against the human-like bot at my sparring level. Results are
-tracked against Stockfish's winning chances at the start.
-
-Does steering work? Simulated games ("me" = the human-like bot at 906), 30 games each:
-
-| Focus | Steering off | Steering on |
-|---|---|---|
-| I'm winning (converting) | 31% of my turns | 52% |
-| My pieces attacked (hanging material) | 18% | 31% |
-| I'm down material | 35% | 49% |
-
-```bash
-uv run python -m r64.sparring_sim --games 30   # re-run the steering check
-```
-
-## Train
-
-```bash
-# Human-like base model (6 residual blocks x 64 channels, conditioned on rating + clock)
-uv run python -m r64.model train --data data/positions/lichess-base --name base --epochs 2
-
-# Move-match accuracy by rating band, rating sensitivity, and how well it predicts me
-uv run python -m r64.model evaluate --checkpoint checkpoints/base/best.pt
-
-# Does the rating setting change the bot's strength? (alternating colors)
-uv run python -m r64.model match bot:800 bot:2000 --games 60
-uv run python -m r64.model match bot:1600 stockfish:1320 --games 30
-```
-
-Training on an M2 MacBook (8 GB) runs at ~3,000 positions/s, so 2 epochs over 14M positions
-takes about 3 hours. Checkpoints are saved at every evaluation; stopping early is safe.
-
-Data output goes to `data/positions/<name>/` as `train-*.npz` / `val-*.npz` shards
-(~115 bytes per position; 1M positions ≈ 115 MB). Speed on an 8-core M-series Mac:
-~1,700 games/s (≈100k positions/s) to encode, ~400k positions/s to load onto the GPU.
-
-## Play
-
-```bash
-uv run python -m r64.server
-```
-
-Then open http://127.0.0.1:8064 and pick an opponent:
-
-- **Human-like bot** (600-2200): the trained network. It samples a move from its prediction of
-  what a player of that rating would play, so it makes human mistakes and varies its games.
-  Lower ratings sample more loosely; higher ratings mostly play the most likely move.
-  Uses `checkpoints/base/best.pt` (set `R64_BOT=path/to/model.pt` to use another).
-- **Stockfish** (1320-3190): limited-strength Stockfish, if installed.
-
-Measured strength (bot vs bot, 60 games): 800 scores 20% against 2000 and 1200 scores 33%
-against 1800. Against Stockfish 1320: 27% at 1200, 38% at 1600, 47% at 2000. Its ceiling is around
-Stockfish 1320, so the top of the range plays a bit below its label.
-
-Games are stored in `data/r64.sqlite`
-(set `R64_DB=/some/other.sqlite` to use a different database, e.g. for testing).
+Built with [python-chess](https://github.com/niklasf/python-chess), PyTorch, FastAPI,
+[chessground](https://github.com/lichess-org/chessground) and Stockfish.
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/) and macOS on Apple Silicon (other platforms should work,
-training just won't use the Apple GPU).
-
-Keep the repo **outside** iCloud-synced folders (Desktop, Documents): with "Optimize Mac Storage",
-macOS offloads files from `.venv` and `data/` to iCloud, and Python, uv and ruff then stall
-reading them. `~/Developer` works well.
+Requires [uv](https://docs.astral.sh/uv/) and [Stockfish](https://stockfishchess.org/). Training
+uses the Apple GPU on Apple Silicon Macs, or CUDA where available.
 
 ```bash
-uv sync            # create .venv and install dependencies
-uv run pytest      # run the tests
+brew install stockfish   # or your platform's package
+uv sync                  # install dependencies
+uv run pytest            # run the tests
 ```
 
-Later phases also need Stockfish:
+## Quick start
+
+Trained models aren't included, so train the base model first:
 
 ```bash
-brew install stockfish
+# 1. Human-like base model: download ~200k lichess games, then train (a few hours on a laptop)
+uv run python -m r64.data lichess-db --month 2026-10 --games 200000 --name lichess-base
+uv run python -m r64.model train --data data/positions/lichess-base --name base --epochs 2
+
+# 2. Your games: put in your own usernames, and leave out a site you don't use
+uv run python -m r64.data import-mine --chesscom YOUR_CHESSCOM_NAME --lichess YOUR_LICHESS_NAME
+uv run python -m r64.data encode-mine
+uv run python -m r64.model personal       # your personal model (a few minutes)
+uv run python -m r64.analysis analyze     # Stockfish over your games (about 1 s per game per core)
+
+# 3. Play
+uv run python -m r64.server               # then open http://127.0.0.1:8064
 ```
+
+The server works at any stage: without a trained model you can still play Stockfish.
+
+## What's on the page
+
+- **Play** (`/`): choose the sparring partner, the human-like bot, your personal model, or
+  Stockfish. The page also has drills and the status of your personal model.
+- **Weakness map** (`/weakness`): your weak spots and strengths compared with your opponents, plus
+  example positions, a monthly trend, opening results and mistake types.
+
+## Other commands
+
+| Command | What it does |
+|---|---|
+| `uv run python -m r64.model evaluate` | Base model accuracy by rating band |
+| `uv run python -m r64.model match bot:1200 bot:1800` | Play two opponents against each other |
+| `uv run python -m r64.model learning-curve` | Personal model accuracy vs number of your games |
+| `uv run python -m r64.analysis report` | The weakness map as text |
+| `uv run python -m r64.sparring_sim` | Measure how much steering focuses games |
+
+Games are stored in `data/r64.sqlite`, and models in `checkpoints/`. Both are git-ignored. Set
+`R64_DB` to use another games database, or `R64_BOT` to use another base model.
 
 ## Layout
 
 ```
-r64/            Python package
-  data/         lichess database download, parsing, position encoding
-  model/        move-prediction network and training
-  analysis/     Stockfish analysis, weakness map
-  server/       FastAPI web server
+r64/data/       game downloads, PGN parsing, position encoding
+r64/model/      network, training, bots, personal model
+r64/analysis/   Stockfish analysis and the weakness map
+r64/sparring*   steering, adaptive level, drills
+r64/server/     web server
 web/            browser UI
-tests/          pytest tests
-legacy/         original OpenGL/GLUT board prototype (not used)
-data/           downloaded and generated data (git-ignored)
-checkpoints/    trained models (git-ignored)
+tests/          tests
 ```
+
+See [PLAN.md](PLAN.md) for the design.
 
 ## License
 
-MIT
+[GPL-3.0-or-later](LICENSE).

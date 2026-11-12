@@ -27,6 +27,14 @@ CREATE TABLE IF NOT EXISTS games (
 );
 """
 
+# Columns added after the first version; added to existing databases on open.
+EXTRA_COLUMNS = {
+    "start_fen": "TEXT",      # NULL = normal starting position
+    "mode": "TEXT NOT NULL DEFAULT 'normal'",  # normal, sparring, drill
+    "drill_tag": "TEXT",      # the weak spot a drill practises
+    "start_wp": "REAL",       # drills: my winning chances at the start (Stockfish)
+}
+
 
 @dataclass
 class GameRecord:
@@ -41,6 +49,10 @@ class GameRecord:
     result: str | None
     termination: str | None
     pgn: str | None
+    start_fen: str | None = None
+    mode: str = "normal"
+    drill_tag: str | None = None
+    start_wp: float | None = None
 
 
 def _now() -> str:
@@ -54,15 +66,23 @@ class GameStore:
         self._conn = sqlite3.connect(str(path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA)
+        have = {r["name"] for r in self._conn.execute("PRAGMA table_info(games)")}
+        for col, decl in EXTRA_COLUMNS.items():
+            if col not in have:
+                self._conn.execute(f"ALTER TABLE games ADD COLUMN {col} {decl}")
         self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
 
-    def create(self, player_color: str, opponent: str, opponent_elo: int | None) -> int:
+    def create(
+        self, player_color: str, opponent: str, opponent_elo: int | None, start_fen: str | None = None,
+        mode: str = "normal", drill_tag: str | None = None, start_wp: float | None = None,
+    ) -> int:
         cur = self._conn.execute(
-            "INSERT INTO games (created_at, player_color, opponent, opponent_elo) VALUES (?, ?, ?, ?)",
-            (_now(), player_color, opponent, opponent_elo),
+            "INSERT INTO games (created_at, player_color, opponent, opponent_elo, start_fen, mode,"
+            " drill_tag, start_wp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (_now(), player_color, opponent, opponent_elo, start_fen, mode, drill_tag, start_wp),
         )
         self._conn.commit()
         return cur.lastrowid
@@ -76,6 +96,14 @@ class GameStore:
             "SELECT * FROM games ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [_to_record(r) for r in rows]
+
+    def finished(self, mode: str | None = None) -> list[GameRecord]:
+        """Finished games, oldest first (optionally of one mode)."""
+        q = "SELECT * FROM games WHERE status = 'finished'"
+        args: tuple = ()
+        if mode:
+            q, args = q + " AND mode = ?", (mode,)
+        return [_to_record(r) for r in self._conn.execute(q + " ORDER BY id", args)]
 
     def count_finished(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM games WHERE status = 'finished'").fetchone()[0]
@@ -108,4 +136,8 @@ def _to_record(row: sqlite3.Row) -> GameRecord:
         result=row["result"],
         termination=row["termination"],
         pgn=row["pgn"],
+        start_fen=row["start_fen"],
+        mode=row["mode"],
+        drill_tag=row["drill_tag"],
+        start_wp=row["start_wp"],
     )

@@ -24,8 +24,8 @@ class GameNotFound(LookupError):
     pass
 
 
-def board_from_moves(moves: list[str]) -> chess.Board:
-    board = chess.Board()
+def board_from_moves(moves: list[str], start_fen: str | None = None) -> chess.Board:
+    board = chess.Board(start_fen) if start_fen else chess.Board()
     for uci in moves:
         board.push_uci(uci)
     return board
@@ -52,6 +52,8 @@ def to_pgn(record: GameRecord, board: chess.Board, result: str, termination: str
     game.headers["Black"] = "me" if record.player_color == "black" else opp
     game.headers["Result"] = result
     game.headers["Termination"] = termination
+    if record.mode != "normal":
+        game.headers["Mode"] = record.mode + (f": {record.drill_tag}" if record.drill_tag else "")
     return str(game)
 
 
@@ -61,7 +63,16 @@ class GameService:
         self.opponents = opponents
         self.on_finish: list[Callable[[GameRecord], None]] = []  # called after a game ends
 
-    def new_game(self, color: str, opponent: str, elo: int | None) -> GameRecord:
+    def new_game(
+        self, color: str, opponent: str, elo: int | None, start_fen: str | None = None,
+        mode: str = "normal", drill_tag: str | None = None, start_wp: float | None = None,
+    ) -> GameRecord:
+        """Start a game. From `start_fen` (a drill), I play the side to move."""
+        if start_fen:
+            board = chess.Board(start_fen)
+            if not board.is_valid() or board.is_game_over():
+                raise ValueError("bad start position")
+            color = _color_name(board.turn)
         if color == "random":
             color = random.choice(["white", "black"])
         if color not in ("white", "black"):
@@ -72,16 +83,17 @@ class GameService:
         if elo is not None and not opp.min_elo <= elo <= opp.max_elo:
             span = opp.min_elo if opp.min_elo == opp.max_elo else f"{opp.min_elo}-{opp.max_elo}"
             raise ValueError(f"{opp.label} plays at {span}, not {elo}")
-        game_id = self.store.create(color, opponent, elo)
-        if color == "black":
-            self._opponent_reply(self._get(game_id))
+        game_id = self.store.create(color, opponent, elo, start_fen, mode, drill_tag, start_wp)
+        record = self._get(game_id)
+        if _color_name(board_from_moves([], start_fen).turn) != color:
+            self._opponent_reply(record)
         return self._get(game_id)
 
     def play(self, game_id: int, uci: str) -> GameRecord:
         record = self._get(game_id)
         if record.status != "ongoing":
             raise GameOver("game is over")
-        board = board_from_moves(record.moves)
+        board = board_from_moves(record.moves, record.start_fen)
         if _color_name(board.turn) != record.player_color:
             raise IllegalMove("not your turn")
         try:
@@ -103,7 +115,7 @@ class GameService:
         record = self._get(game_id)
         if record.status != "ongoing":
             raise GameOver("game is over")
-        board = board_from_moves(record.moves)
+        board = board_from_moves(record.moves, record.start_fen)
         result = "0-1" if record.player_color == "white" else "1-0"
         pgn = to_pgn(record, board, result, "resignation")
         self.store.finish(game_id, record.moves, result, "resignation", pgn)
@@ -120,8 +132,11 @@ class GameService:
         return record
 
     def _opponent_reply(self, record: GameRecord) -> None:
-        board = board_from_moves(record.moves)
-        move = self.opponents[record.opponent].choose_move(board, record.opponent_elo)
+        board = board_from_moves(record.moves, record.start_fen)
+        opponent = self.opponents[record.opponent]
+        if hasattr(opponent, "prepare"):
+            opponent.prepare(record)  # e.g. the sparring bot reads the game's focus
+        move = opponent.choose_move(board, record.opponent_elo)
         board.push(move)
         moves = record.moves + [move.uci()]
         if not self._finish_if_over(record, board, moves):
@@ -148,8 +163,9 @@ def _color_name(turn: chess.Color) -> str:
 
 def state(record: GameRecord) -> dict:
     """JSON-friendly game state for the web UI."""
-    board = board_from_moves(record.moves)
-    san, replay = [], chess.Board()
+    board = board_from_moves(record.moves, record.start_fen)
+    start = board_from_moves([], record.start_fen)
+    san, replay = [], start.copy()
     for uci in record.moves:
         move = chess.Move.from_uci(uci)
         san.append(replay.san(move))
@@ -175,6 +191,12 @@ def state(record: GameRecord) -> dict:
         "last_move": [last[:2], last[2:4]] if last else None,
         "check": board.is_check(),
         "dests": dests,
+        "start_fen": record.start_fen,
+        "first_move_number": start.fullmove_number,
+        "first_turn": _color_name(start.turn),
+        "mode": record.mode,
+        "drill_tag": record.drill_tag,
+        "start_wp": record.start_wp,
         "status": record.status,
         "result": record.result,
         "termination": record.termination,

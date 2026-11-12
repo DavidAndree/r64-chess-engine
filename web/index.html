@@ -44,8 +44,17 @@
             <input type="range" name="elo" min="600" max="2200" step="10" value="1200">
           </label>
           <p id="elo-fixed" class="hint" hidden></p>
+          <label id="focus-label" hidden>Focus
+            <select name="focus"></select>
+          </label>
           <button type="submit">Start</button>
         </form>
+      </div>
+
+      <div class="panel" id="drills" hidden>
+        <h2>Drills</h2>
+        <p class="hint">Start from a real position from your games where you went wrong.</p>
+        <ul id="drill-list" class="drills"></ul>
       </div>
 
       <div class="panel" id="personal" hidden>
@@ -58,6 +67,7 @@
       </div>
 
       <div class="panel">
+        <div id="banner" class="banner" hidden></div>
         <div id="status" class="status">Start a new game.</div>
         <ol id="move-list" class="move-list"></ol>
         <div class="actions">

@@ -11,10 +11,14 @@ See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 ## Status
 
-Phase 6 done — a weakness map: Stockfish analyzes all my games and shows, at
-http://127.0.0.1:8064/weakness, the kinds of positions where I lose more winning chances than
-players at my rating do, with real examples from my games. Phase 5 gave a personal model that
-predicts 46.2% of my moves (base model: 42.0%) and retrains itself as I play.
+All 7 phases done. r64 is a sparring partner that knows how I play:
+
+- a **human-like bot** at any rating (600-2200) and a **personal model** that plays like me
+  (predicts 46.2% of my moves; the general model 42.0%), retrained as I play;
+- a **weakness map** (`/weakness`): Stockfish analyzes all my games and shows where I lose more
+  than players at my rating, with real examples;
+- **targeted sparring**: a partner that steers games into my weak spots, adapts its level to keep
+  me around 50%, and **drills** that start from positions where I went wrong.
 
 ## Data
 
@@ -71,6 +75,36 @@ How it measures:
   missed material, walked into / missed a fork, walked into / missed mate, other).
 - A **weak spot** is a tag where I lose clearly more than my opponents (≥ 2 standard errors),
   ranked by the extra winning chances it costs per game.
+
+## Sparring and drills
+
+Pick **Sparring partner** as the opponent on the play page:
+
+- **Steering.** Among the moves a human at its rating would plausibly play, it prefers the ones
+  that leave me in one of my weak spots. Each game has one focus (rotating, weighted by what each
+  weak spot costs me, or picked by hand). It recognises positions without Stockfish: material,
+  phase, attacked pieces and tactics from the board; winning/losing from the network's value head
+  (calibrated on my games: 86% agreement with Stockfish).
+- **Adaptive level.** Its rating starts at my current rating and moves Elo-style (K = 40) after
+  every sparring game, toward the level where I score 50%.
+- **Focus summary.** After a sparring game: how much of it was spent in the focus position,
+  compared with my chess.com games.
+
+**Drills** start a game from a real position from my games where I went wrong in a weak spot
+(60 recent ones per weak spot), against the human-like bot at my sparring level. Results are
+tracked against Stockfish's winning chances at the start.
+
+Does steering work? Simulated games ("me" = the human-like bot at 906), 30 games each:
+
+| Focus | Steering off | Steering on |
+|---|---|---|
+| I'm winning (converting) | 31% of my turns | 52% |
+| My pieces attacked (hanging material) | 18% | 31% |
+| I'm down material | 35% | 49% |
+
+```bash
+uv run python -m r64.sparring_sim --games 30   # re-run the steering check
+```
 
 ## Train
 

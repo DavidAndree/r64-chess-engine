@@ -66,17 +66,24 @@ function render() {
     return;
   }
   const myTurn = game.status === "ongoing" && game.turn === game.player_color && !busy;
-  cg.set({
-    fen: game.fen,
+  const config = {
     orientation: game.player_color,
-    turnColor: game.turn,
-    lastMove: game.last_move || undefined,
-    check: game.check,
     movable: {
       color: myTurn ? game.player_color : undefined,
       dests: myTurn ? new Map(Object.entries(game.dests)) : new Map(),
     },
-  });
+  };
+  // While the opponent is thinking, `game` is still the position from before my move: only lock
+  // the board. Redrawing it from that position would make my piece jump back until the reply.
+  if (!busy) {
+    Object.assign(config, {
+      fen: game.fen,
+      turnColor: game.turn,
+      lastMove: game.last_move || undefined,
+      check: game.check,
+    });
+  }
+  cg.set(config);
 
   const oppName = oppLabel(game.opponent) + (game.opponent_elo ? ` (${game.opponent_elo})` : "");
   els.top.textContent = oppName;
@@ -312,6 +319,8 @@ async function onUserMove(orig, dest) {
   if (isPromotion(dest)) {
     const piece = await pickPromotion();
     uci += piece;
+    const role = { q: "queen", r: "rook", b: "bishop", n: "knight" }[piece];
+    cg.setPieces(new Map([[dest, { role, color: game.player_color, promoted: true }]]));
   }
   await run(api(`/api/games/${game.id}/move`, { method: "POST", body: JSON.stringify({ uci }) }));
 }

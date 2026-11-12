@@ -11,9 +11,10 @@ See [PLAN.md](PLAN.md) for the full design and roadmap.
 
 ## Status
 
-Phase 5 done — a personal model that plays like me. Fine-tuned on my 3,448 chess.com games, it
-predicts 46.2% of my moves on held-out games (the general base model: 42.0%), and it retrains
-itself as I play. The human-like bot plays at 600-2200.
+Phase 6 done — a weakness map: Stockfish analyzes all my games and shows, at
+http://127.0.0.1:8064/weakness, the kinds of positions where I lose more winning chances than
+players at my rating do, with real examples from my games. Phase 5 gave a personal model that
+predicts 46.2% of my moves (base model: 42.0%) and retrains itself as I play.
 
 ## Data
 
@@ -48,6 +49,28 @@ How well it predicts my moves (held-out games, same positions for all):
 
 Most of the gain comes from the first few hundred games (my level and openings, e.g. it learned
 that I answer 1.e4 with 1...c6: 5% → 41%); after that it keeps improving slowly.
+
+## Weakness map
+
+```bash
+uv run python -m r64.analysis analyze     # Stockfish over every game not analyzed yet (resumable)
+uv run python -m r64.analysis report      # the weakness map as text (also at /weakness)
+```
+
+Stockfish evaluates every position of my games (10,000 nodes ≈ depth 13; ~1 s per game per core,
+all cores in parallel; 3,448 games ≈ 1 hour). Results go to `data/analysis.sqlite`; the "Analyze
+new games" button on the page adds new chess.com/r64 games.
+
+How it measures:
+- **Cost of a move** = the winning chances it gives away (Stockfish eval before vs after, through
+  lichess's eval → win-probability curve). Blunder ≥ 15 points, mistake ≥ 10, inaccuracy ≥ 5.
+- **Players at my rating** = my opponents in the same games: same rating (chess.com matchmaking),
+  same time controls. Games against r64's bots don't count as opponents.
+- Every move is tagged (phase, winning/balanced/losing, material, clock, check, attacked piece,
+  king in the center, piece moved, endgame type), and every mistake gets a cause (hung material,
+  missed material, walked into / missed a fork, walked into / missed mate, other).
+- A **weak spot** is a tag where I lose clearly more than my opponents (≥ 2 standard errors),
+  ranked by the extra winning chances it costs per game.
 
 ## Train
 
@@ -95,6 +118,10 @@ Games are stored in `data/r64.sqlite`
 
 Requires [uv](https://docs.astral.sh/uv/) and macOS on Apple Silicon (other platforms should work,
 training just won't use the Apple GPU).
+
+Keep the repo **outside** iCloud-synced folders (Desktop, Documents): with "Optimize Mac Storage",
+macOS offloads files from `.venv` and `data/` to iCloud, and Python, uv and ruff then stall
+reading them. `~/Developer` works well.
 
 ```bash
 uv sync            # create .venv and install dependencies

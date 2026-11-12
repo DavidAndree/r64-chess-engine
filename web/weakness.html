@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>r64 · Weakness map</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.2.1/assets/chessground.base.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.2.1/assets/chessground.brown.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.2.1/assets/chessground.cburnett.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>r64</h1>
+    <nav class="nav"><a href="/">Play</a><a href="/weakness" aria-current="page">Weakness map</a></nav>
+  </header>
+
+  <main class="wk">
+    <div class="wk-top">
+      <div>
+        <h2 class="wk-title">Where you lose games</h2>
+        <p class="hint" id="wk-scope">Loading…</p>
+      </div>
+      <div class="wk-controls">
+        <label class="inline">Games
+          <select id="recent">
+            <option value="300">Last 300</option>
+            <option value="1000" selected>Last 1,000</option>
+            <option value="100000">All</option>
+          </select>
+        </label>
+        <button id="update">Analyze new games</button>
+      </div>
+    </div>
+    <p class="hint" id="update-status"></p>
+
+    <section class="tiles" id="tiles"></section>
+
+    <section>
+      <h3>Weak spots</h3>
+      <p class="hint">Positions where you lose clearly more winning chances than your opponents
+        (players at your rating, same games) do in the same kind of position. Ranked by what they cost you per game.</p>
+      <div class="legend"><span class="sw me"></span>You <span class="sw opp"></span>Opponents at your level</div>
+      <div id="weak" class="cards"></div>
+    </section>
+
+    <section>
+      <h3>Strengths</h3>
+      <div id="strong" class="cards compact"></div>
+    </section>
+
+    <section>
+      <h3>Over time</h3>
+      <p class="hint">Winning chances lost per move, by month (months with at least 100 of your moves).</p>
+      <div class="legend"><span class="sw me"></span>You <span class="sw opp"></span>Opponents</div>
+      <div id="trend" class="chart"></div>
+    </section>
+
+    <div class="two-col">
+      <section>
+        <h3>What goes wrong in your mistakes</h3>
+        <table class="data" id="causes"></table>
+      </section>
+      <section>
+        <h3>Openings</h3>
+        <table class="data" id="openings"></table>
+      </section>
+    </div>
+
+    <section>
+      <h3>Every category</h3>
+      <p class="hint">Winning chances lost per move. "z" is how sure the difference is (2+ = clear).</p>
+      <table class="data" id="all"></table>
+    </section>
+  </main>
+  <div id="tip" class="tip" hidden></div>
+
+  <script type="module" src="/static/weakness.js"></script>
+</body>
+</html>

@@ -1,50 +1,66 @@
-# r64
+# r64 ♟️
 
-A chess sparring partner that learns how you play. Instead of trying to beat you like Stockfish, it
-tries to be the most useful opponent for your level:
+**A chess bot that plays like a human at your level, finds the positions where you lose, and trains you on them.**
 
-- **Human-like bot.** A neural network trained on lichess games plays like a human at any rating
-  from 600 to 2200, mistakes included.
-- **Personal model.** Fine-tuned on your own games, it plays like you, and it retrains as you play.
-- **Weakness map.** Stockfish analyzes your games and shows where you lose more than players at your
-  rating do, with real examples from your games.
-- **Targeted sparring.** The sparring partner steers games into your weak spots and adapts its level
-  to keep you around 50%. Drills start from positions where you went wrong.
+Stockfish is too strong to learn from, and most bots blunder in ways no human would. r64 plays like a
+real 600–2200 player (mistakes included), studies your own games from chess.com and lichess, and steers
+sparring games into the exact kinds of positions you keep losing.
 
-Built with [python-chess](https://github.com/niklasf/python-chess), PyTorch, FastAPI,
-[chessground](https://github.com/lichess-org/chessground) and Stockfish.
+![Weakness map: where you lose more than players at your rating](docs/assets/weakness-map.jpg)
 
-## Setup
+## What it does
 
-Requires [uv](https://docs.astral.sh/uv/) and [Stockfish](https://stockfishchess.org/). Training
-uses the Apple GPU on Apple Silicon Macs, or CUDA where available.
+- **Human-like bot.** A neural network trained on 200k lichess games predicts the move a human at a
+  given rating would play **45% of the time** (Maia, the research benchmark, gets about 51%).
+- **Weakness map.** Stockfish analyzes your games and compares you with your opponents *in the same
+  games*: "you lose 6.5% winning chances per move when converting winning positions; players at your
+  rating lose 5.1%." Each weak spot comes with real positions from your games.
+- **Targeted sparring.** The sparring partner steers games toward your weak spots and adjusts its
+  rating to keep you scoring around 50%.
+- **Drills.** Start from real positions where you went wrong and play them out again.
+- **Personal model.** Fine-tuned on your games, it plays like *you*, and it retrains as you play.
+
+Everything runs locally. Your games never leave your machine.
+
+![Play page with the sparring partner and drills](docs/assets/play.jpg)
+
+## Quick start (about 3 minutes)
+
+Requires [uv](https://docs.astral.sh/uv/) and [Stockfish](https://stockfishchess.org/).
 
 ```bash
-brew install stockfish   # or your platform's package
-uv sync                  # install dependencies
-uv run pytest            # run the tests
+git clone https://github.com/DavidAndree/r64-chess-engine && cd r64-chess-engine
+brew install stockfish           # or your platform's package
+uv sync
+uv run python -m r64.model download   # pretrained human-like model (2.4 MB)
+uv run python -m r64.server           # open http://127.0.0.1:8064
 ```
 
-## Quick start
-
-Trained models aren't included, so train the base model first:
+That's enough to play the human-like bot at any rating. To get your weakness map, sparring and drills,
+import your games:
 
 ```bash
-# 1. Human-like base model: download ~200k lichess games, then train (a few hours on a laptop)
-uv run python -m r64.data lichess-db --month 2026-10 --games 200000 --name lichess-base
-uv run python -m r64.model train --data data/positions/lichess-base --name base --epochs 2
-
-# 2. Your games: put in your own usernames, and leave out a site you don't use
+# put in your usernames; leave out a site you don't use
 uv run python -m r64.data import-mine --chesscom YOUR_CHESSCOM_NAME --lichess YOUR_LICHESS_NAME
 uv run python -m r64.data encode-mine
-uv run python -m r64.model personal       # your personal model (a few minutes)
 uv run python -m r64.analysis analyze     # Stockfish over your games (about 1 s per game per core)
-
-# 3. Play
-uv run python -m r64.server               # then open http://127.0.0.1:8064
+uv run python -m r64.model personal       # your personal model (a few minutes)
 ```
 
-The server works at any stage: without a trained model you can still play Stockfish.
+Training uses the Apple GPU on Apple Silicon Macs, or CUDA where available.
+
+### Train the base model yourself (optional)
+
+```bash
+uv run python -m r64.data lichess-db --month 2026-10 --games 200000 --name lichess-base
+uv run python -m r64.model train --data data/positions/lichess-base --name base --epochs 2
+```
+
+A few hours on a laptop. The server works at any stage: without a model you can still play Stockfish.
+
+Built with [python-chess](https://github.com/niklasf/python-chess), PyTorch, FastAPI,
+[chessground](https://github.com/lichess-org/chessground) and Stockfish. Inspired by
+[Maia](https://www.maiachess.com/).
 
 ## What's on the page
 
@@ -57,6 +73,7 @@ The server works at any stage: without a trained model you can still play Stockf
 
 | Command | What it does |
 |---|---|
+| `uv run python -m r64.model download` | Download the pretrained base model |
 | `uv run python -m r64.model evaluate` | Base model accuracy by rating band |
 | `uv run python -m r64.model match bot:1200 bot:1800` | Play two opponents against each other |
 | `uv run python -m r64.model learning-curve` | Personal model accuracy vs number of your games |
@@ -79,6 +96,11 @@ tests/          tests
 ```
 
 See [PLAN.md](PLAN.md) for the design.
+
+## Contributing
+
+Issues and pull requests are welcome. Run `uv run pytest` and `uv run ruff check` before opening a PR.
+If r64 helped your game, a ⭐ helps other players find it.
 
 ## License
 

@@ -1,5 +1,6 @@
 """Model commands.
 
+    uv run python -m r64.model download            # pretrained base model, no training needed
     uv run python -m r64.model train --data data/positions/lichess-base --name base
     uv run python -m r64.model evaluate --checkpoint checkpoints/base/best.pt
     uv run python -m r64.model match bot:1000 bot:1800 --games 20
@@ -21,6 +22,9 @@ from r64.model.train import TrainConfig, train
 def main() -> None:
     p = argparse.ArgumentParser(prog="python -m r64.model")
     sub = p.add_subparsers(dest="cmd", required=True)
+
+    d = sub.add_parser("download", help="download the pretrained human-like base model")
+    d.add_argument("--force", action="store_true", help="replace an existing base model")
 
     t = sub.add_parser("train", help="train the move-prediction network")
     t.add_argument("--data", nargs="+", required=True, help="positions folder(s)")
@@ -53,7 +57,11 @@ def main() -> None:
     sub.add_parser("learning-curve", help="personal model accuracy vs number of my games")
 
     args = p.parse_args()
-    if args.cmd == "match":
+    if args.cmd == "download":
+        from r64.model.download import download_base
+
+        download_base(force=args.force)
+    elif args.cmd == "match":
         _run_match(args)
     elif args.cmd == "personal":
         from r64.model.personal import train_version

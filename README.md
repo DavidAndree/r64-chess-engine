@@ -10,8 +10,11 @@ sparring games into the exact kinds of positions you keep losing.
 
 ## What it does
 
-- **Human-like bot.** A neural network trained on 200k lichess games predicts the move a human at a
-  given rating would play **45% of the time** (Maia, the research benchmark, gets about 51%).
+- **Human-like bot.** A small neural network trained on 220k lichess blitz and rapid games (up to
+  2200, no minimum rating) predicts the move a human at a given rating would play **45% of the
+  time**, from 39% at 600 to 47% at 1200. For comparison, the original
+  [Maia](https://www.maiachess.com/) (2020) got about 51% on 1100 to 1900 games, and newer Maia
+  versions score higher. Low-rated games are noisier, so the numbers aren't directly comparable.
 - **Weakness map.** Stockfish analyzes your games and compares you with your opponents *in the same
   games*: "you lose 6.5% winning chances per move when converting winning positions; players at your
   rating lose 5.1%." Each weak spot comes with real positions from your games.
